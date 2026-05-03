@@ -84,6 +84,17 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--accent);color:#000;padding:0.5rem 1rem;border-radius:4px;font-size:0.8rem;font-weight:600;opacity:0;transform:translateY(10px);transition:all 0.25s;pointer-events:none;z-index:100}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.err{background:var(--danger)}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:1000}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:8px;width:90%;max-width:640px;max-height:80vh;display:flex;flex-direction:column}
+.modal-header{padding:1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-header h3{color:var(--accent);font-size:0.95rem;margin:0}
+.modal-close{background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;padding:0 0.3rem}
+.modal-close:hover{color:var(--text)}
+.modal-body{flex:1;padding:1rem;overflow-y:auto}
+.modal-body textarea{min-height:260px;font-size:0.8rem}
+.modal-footer{padding:0.75rem 1rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:0.5rem}
 
 /* RETRY */
 .retry-row{display:flex;gap:0.5rem;align-items:center}
@@ -145,6 +156,22 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Import Config</h3>
+      <button class="modal-close" onclick="closeImportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="import-textarea" placeholder="Paste your existing config.yaml here..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeImportModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.1/dist/js-yaml.min.js"></script>
 <script>
@@ -466,13 +493,23 @@ function downloadYAML(){
 }
 
 function importYAML(){
-  const yaml=prompt('Paste your existing config.yaml below:','');
-  if(!yaml)return;
+  $('import-textarea').value='';
+  $('import-modal').classList.add('open');
+}
+
+function closeImportModal(){
+  $('import-modal').classList.remove('open');
+}
+
+function doImport(){
+  const yaml=$('import-textarea').value.trim();
+  if(!yaml){toast('Paste a config first',true);return;}
   try{
     const cfg=jsyaml.load(yaml);
     if(!cfg||typeof cfg!=='object')throw new Error('Invalid YAML');
     rebuildUI(cfg);
     update();
+    closeImportModal();
     toast('Config imported successfully');
   }catch(e){toast('Import failed: '+e.message,true);}
 }
