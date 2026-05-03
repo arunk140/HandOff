@@ -17,7 +17,7 @@ checksum:
   name_template: "checksums.txt"
 
 release:
-  name_template: "nightly"
+  name_template: "nightly-{{ .ShortCommit }}"
   prerelease: true
   make_latest: true
 
