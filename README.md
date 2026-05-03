@@ -2,7 +2,7 @@
 
 A fire-and-forget webhook proxy. Place it between your clients and backend services, define route patterns, and HandOff triggers webhooks asynchronously on matching requests — without ever blocking or modifying the response.
 
-> **Config editor:** Open [`config-editor.html`](config-editor.html) in any browser for a visual YAML builder — no install, no deploy.
+> **Config editor:** Open [HandOff Editor](https://arunk140.com/HandOff/) in any browser for a visual YAML builder — no install, no deploy.
 
 ## Quick Start
 
