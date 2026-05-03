@@ -22,4 +22,4 @@ release:
   make_latest: true
 
 changelog:
-  skip: true
+  disable: true
