@@ -1,0 +1,66 @@
+# HandOff configuration example
+# See README.md for full documentation.
+
+listen:
+  host: "127.0.0.1"
+  port: 8080
+  tls:
+    enabled: false
+    # cert_file: "/etc/handoff/cert.pem"
+    # key_file: "/etc/handoff/cert.key"
+
+global:
+  timeout: 30s
+  follow_redirects: true
+
+routes:
+  # Match all requests under /api/ to a backend, fire webhook with metadata
+  - path: "/api/**"
+    methods: []
+    backend: "https://httpbin.org"
+    webhooks:
+      - type: http
+        url: "https://webhook.site/your-uuid-here"
+        method: POST
+        headers:
+          Content-Type: application/json
+        payload: metadata
+        retry:
+          attempts: 3
+          backoff: exponential
+
+  # Match POST/PUT/DELETE under /v2/ with custom webhook payload template
+  # - path: "/v2/**"
+  #   methods: ["POST", "PUT", "DELETE"]
+  #   backend: "https://api.example.com"
+  #   webhooks:
+  #     - type: http
+  #       url: "https://hooks.slack.com/services/..."
+  #       method: POST
+  #       headers:
+  #         Authorization: "Bearer {{.Secrets.slack_key}}"
+  #         Content-Type: application/json
+  #       payload: custom
+  #       template: |
+  #         {
+  #           "text": "{{.Request.Method}} {{.Request.Path}} -> {{.Response.StatusCode}} ({{.Response.LatencyMs}}ms)",
+  #           "fields": [
+  #             {"title": "Client IP", "value": "{{.Request.ClientIP}}"},
+  #             {"title": "Request ID", "value": "{{.Request.ID}}"}
+  #           ]
+  #         }
+  #       retry:
+  #         attempts: 3
+  #         backoff: exponential
+
+  # Match a regex path and forward raw body to an audit webhook
+  # - path: "~/users/\\d+/activate$"
+  #   methods: []
+  #   backend: "https://api.example.com"
+  #   webhooks:
+  #     - type: http
+  #       url: "https://audit.example.com/log"
+  #       method: POST
+  #       headers:
+  #         Content-Type: "{{.Request.ContentType}}"
+  #       payload: body
