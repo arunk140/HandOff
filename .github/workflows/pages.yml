@@ -1,0 +1,29 @@
+name: deploy pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'config-editor.html'
+      - '.github/workflows/pages.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: prepare deploy
+        run: |
+          mkdir -p out
+          cp config-editor.html out/index.html
+          cp config-editor.html out/config-editor.html
+
+      - name: deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./out
+          publish_branch: gh-pages
