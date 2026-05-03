@@ -233,6 +233,101 @@ Client ──► HandOff ──► Backend ──► HandOff ──► Client
 
 ---
 
+## Use Cases
+
+### Slack alerts on changes
+
+```yaml
+routes:
+  - path: "/deploy"
+    methods: ["POST"]
+    backend: "https://ci.internal.example.com"
+    webhooks:
+      - type: http
+        url: "https://hooks.slack.com/{{.Secrets.slack_webhook_url}}"
+        payload: custom
+        template: |
+          {"text": "deploy triggered by {{.Request.ClientIP}} (status {{.Response.StatusCode}}, {{.Response.LatencyMs}}ms)"}
+```
+
+### Audit trail for every request
+
+```yaml
+routes:
+  - path: "/**"
+    methods: []
+    backend: "https://api.example.com"
+    webhooks:
+      - type: http
+        url: "https://audit.internal.example.com/ingest"
+        payload: metadata
+```
+
+No webhook body buffering overhead — combine with `default_backend` for passthrough-only traffic and `metadata` payload on audited routes.
+
+### Stripe webhook mirroring
+
+Forward to Stripe handler AND send a raw copy to your audit system:
+
+```yaml
+routes:
+  - path: "/webhooks/stripe"
+    methods: ["POST"]
+    backend: "https://payments.internal.example.com/stripe"
+    webhooks:
+      - type: http
+        url: "https://audit.internal.example.com/stripe-log"
+        payload: body
+```
+
+### API analytics pipeline
+
+```yaml
+default_backend: "https://api.example.com"
+
+routes:
+  - path: "/api/**"
+    methods: []
+    backend: "https://api.example.com"
+    webhooks:
+      - type: http
+        url: "https://analytics-pipeline.internal.example.com/ingest"
+        payload: metadata
+        retry:
+          attempts: 2
+          backoff: linear
+```
+
+Non-API paths (static assets, health checks) hit `default_backend` with no webhook overhead.
+
+### GDPR / compliance logging
+
+```yaml
+routes:
+  - path: "~/users/\\d+/(?:export|delete)$"
+    methods: ["POST"]
+    backend: "https://api.example.com"
+    webhooks:
+      - type: http
+        url: "https://compliance.internal.example.com/user-action"
+        payload: metadata
+```
+
+### Feature rollout tracking
+
+```yaml
+routes:
+  - path: "/beta/**"
+    methods: ["POST", "PUT"]
+    backend: "https://beta-api.example.com"
+    webhooks:
+      - type: http
+        url: "https://analytics.internal.example.com/feature-events"
+        payload: metadata
+```
+
+---
+
 ## Further Reading
 
 - [PLAN.md](PLAN.md) — architecture and design decisions

@@ -42,7 +42,15 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m := matcher.New(cfg.Routes)
 	route := m.Match(r.URL.Path, r.Method)
 
-	if route == nil {
+	var backend string
+	var webhooks []config.WebhookConfig
+
+	if route != nil {
+		backend = route.Backend
+		webhooks = route.Webhooks
+	} else if cfg.DefaultBackend != "" {
+		backend = cfg.DefaultBackend
+	} else {
 		slog.Warn("no route matched", "path", r.URL.Path, "method", r.Method)
 		http.Error(w, "no matching route", http.StatusBadGateway)
 		return
@@ -52,20 +60,47 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := getClientIP(r)
 	contentType := r.Header.Get("Content-Type")
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Error("failed to read request body", "error", err, "request_id", requestID)
+	hasWebhooks := len(webhooks) > 0
+	var bodyBytes []byte
+	if hasWebhooks {
+		var err error
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			slog.Error("failed to read request body", "error", err, "request_id", requestID)
+		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
-	r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	recorder := &responseRecorder{ResponseWriter: w}
 	start := time.Now()
 
-	proxy := h.getProxy(route.Backend, cfg)
+	proxy := h.getProxy(backend, cfg)
 	proxy.ServeHTTP(recorder, r)
 
 	latency := time.Since(start)
+
+	logAttrs := []any{
+		"request_id", requestID,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"backend", backend,
+		"status", recorder.statusCode,
+		"latency_ms", latency.Milliseconds(),
+		"client_ip", clientIP,
+	}
+
+	if route != nil {
+		logAttrs = append(logAttrs, "matched_route", route.Path)
+	} else {
+		logAttrs = append(logAttrs, "matched_route", "(default)")
+	}
+
+	slog.Info("request proxied", logAttrs...)
+
+	if !hasWebhooks {
+		return
+	}
 
 	payloadCtx := webhook.PayloadContext{
 		Request: webhook.RequestInfo{
@@ -85,21 +120,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Secrets:   h.secrets,
 	}
 
-	if len(route.Webhooks) > 0 {
-		go func() {
-			h.dispatcher.Fire(context.Background(), route.Webhooks, payloadCtx, bodyBytes)
-		}()
-	}
-
-	slog.Info("request proxied",
-		"request_id", requestID,
-		"method", r.Method,
-		"path", r.URL.Path,
-		"backend", route.Backend,
-		"status", recorder.statusCode,
-		"latency_ms", latency.Milliseconds(),
-		"client_ip", clientIP,
-	)
+	go func() {
+		h.dispatcher.Fire(context.Background(), webhooks, payloadCtx, bodyBytes)
+	}()
 }
 
 func (h *ProxyHandler) getProxy(backend string, cfg *config.Config) *httputil.ReverseProxy {

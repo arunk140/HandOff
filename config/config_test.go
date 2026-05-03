@@ -39,9 +39,28 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "no routes",
+			name:    "no routes and no default_backend",
 			cfg:     Config{Listen: ListenConfig{Port: 8080}},
 			wantErr: true,
+		},
+		{
+			name: "valid config with default_backend and no routes",
+			cfg: Config{
+				Listen:         ListenConfig{Port: 8080},
+				DefaultBackend: "https://example.com",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with routes and default_backend fallback",
+			cfg: Config{
+				Listen:         ListenConfig{Port: 8080},
+				DefaultBackend: "https://fallback.example.com",
+				Routes: []Route{
+					{Path: "/api/**", Backend: "https://api.example.com"},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name: "route missing path",
@@ -156,6 +175,24 @@ func TestWebhookURLRequired(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for webhook missing URL")
+	}
+}
+
+func TestDefaultBackendOnly(t *testing.T) {
+	cfg := Config{
+		Listen:         ListenConfig{Port: 8080},
+		DefaultBackend: "https://example.com",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config with only default_backend, got: %v", err)
+	}
+}
+
+func TestNoRoutesNoDefaultBackend(t *testing.T) {
+	cfg := Config{Listen: ListenConfig{Port: 8080}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for no routes and no default_backend")
 	}
 }
 

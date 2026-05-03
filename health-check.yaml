@@ -1,0 +1,23 @@
+listen:
+  host: "127.0.0.1"
+  port: 8123
+
+global:
+  timeout: 30s
+
+default_backend: "http://localhost:8122"
+
+routes:
+  - path: "/health"
+    methods: ["GET"]
+    backend: "http://localhost:8122"
+    webhooks:
+      - type: http
+        url: "https://webhook.site/774d5098-3a19-4e95-8a30-b9c4a043d335"
+        method: POST
+        headers:
+          Content-Type: application/json
+        payload: metadata
+        retry:
+          attempts: 3
+          backoff: exponential

@@ -28,9 +28,10 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 }
 
 type Config struct {
-	Listen ListenConfig `yaml:"listen"`
-	Global GlobalConfig `yaml:"global"`
-	Routes []Route      `yaml:"routes"`
+	Listen         ListenConfig `yaml:"listen"`
+	Global         GlobalConfig `yaml:"global"`
+	DefaultBackend string       `yaml:"default_backend"`
+	Routes         []Route      `yaml:"routes"`
 }
 
 type ListenConfig struct {
@@ -95,8 +96,11 @@ func (c *Config) Validate() error {
 	if time.Duration(c.Global.Timeout) <= 0 {
 		c.Global.Timeout = Duration(30 * time.Second)
 	}
-	if len(c.Routes) == 0 {
-		return fmt.Errorf("at least one route is required")
+	if len(c.Routes) == 0 && c.DefaultBackend == "" {
+		return fmt.Errorf("at least one route or a default_backend is required")
+	}
+	if c.DefaultBackend != "" && len(c.Routes) > 0 {
+		_ = c.DefaultBackend // valid: routes checked first, default_backend as fallback
 	}
 	for i, route := range c.Routes {
 		if route.Path == "" {

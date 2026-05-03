@@ -7,6 +7,7 @@ Quirks, edge cases, and design decisions in the current implementation.
 ## Table of Contents
 
 - [Body Buffering](#body-buffering)
+- [Default Backend No-Buffer Optimization](#default-backend-no-buffer-optimization)
 - [Webhook Context Lifecycle](#webhook-context-lifecycle)
 - [Response Status Capture](#response-status-capture)
 - [Path Matching Details](#path-matching-details)
@@ -49,6 +50,20 @@ r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 ```
 
 This replaces the original body with a re-readable buffer, allowing the proxy to consume it while keeping a copy for the webhook.
+
+---
+
+## Default Backend No-Buffer Optimization
+
+When `default_backend` is set in the config, any request that doesn't match an explicit route is forwarded to this backend with zero webhooks. Because there are no webhooks to feed a copy of the body to, HandOff skips the `io.ReadAll` buffering step entirely. The request body streams directly from client to backend through the reverse proxy.
+
+**Implications:**
+- Large file uploads to default-backed routes use minimal memory (streaming).
+- Requests matched by explicit routes WITH webhooks still buffer the body as usual.
+- The log entry for default requests includes `matched_route: (default)` instead of the route path.
+- If both a route and `default_backend` are configured, the route is checked first. Default only applies when no route matches.
+
+**Validation rule:** At least one route OR a `default_backend` must be configured. An empty config with neither will fail validation.
 
 ---
 

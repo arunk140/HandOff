@@ -13,6 +13,8 @@ global:
   timeout: 30s
   follow_redirects: true
 
+# default_backend: "https://httpbin.org"   # fallback when no route matches (no webhooks)
+
 routes:
   # Match all requests under /api/ to a backend, fire webhook with metadata
   - path: "/api/**"

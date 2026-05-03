@@ -28,6 +28,8 @@ global:
   timeout: 30s
   follow_redirects: true
 
+default_backend: "https://generic.example.com"   # optional, routes are tried first
+
 routes:
   - path: "/api/v2/**"
     methods: ["POST", "PUT", "DELETE"]
@@ -101,6 +103,19 @@ Both HTTP and HTTPS are supported. Enable TLS by setting `tls.enabled: true` and
 
 `backend` is configured per-route. Different path patterns can forward to different backend services. The proxy creates and caches `httputil.ReverseProxy` instances per backend URL using `sync.Map`.
 
+### Default Backend
+
+Set `default_backend` at the top level to proxy all requests that don't match any route. No webhooks fire on default backend requests, and the request body is streamed directly (not buffered) since there's no webhook that needs it.
+
+```yaml
+default_backend: "https://catch-all.example.com"
+routes:
+  - path: "/health"
+    backend: "https://api.example.com"     # this route takes priority
+    webhooks: [...]
+  # Any other request → default_backend
+```
+
 ### Config Hot Reload
 
 The proxy watches the config file for changes (via `fsnotify`) and reloads on `SIGUSR1`. The new config is validated before atomically swapping in via `atomic.Pointer`, ensuring zero-downtime updates.
@@ -162,8 +177,10 @@ HandOff/
 4. Creates `ProxyHandler` with config pointer + secrets
 5. Starts `net/http.Server` (TLS or plain HTTP based on config)
 6. On each request:
-   - `matcher.Match(path, method)` → finds matching `*Route` (returns `nil` if none → 502)
-   - Request body is fully buffered via `io.ReadAll`
+   - `matcher.Match(path, method)` → finds matching `*Route`
+   - If no route matches but `default_backend` is set: proxy to default backend (no webhooks, no body buffering)
+   - If neither: return 502 Bad Gateway
+   - Request body is fully buffered via `io.ReadAll` ONLY when route has webhooks
    - `httputil.ReverseProxy` forwards to the route's backend
    - Custom `responseRecorder` captures status code from backend response
    - PayloadContext is built with request metadata + response metadata
@@ -190,6 +207,7 @@ HandOff/
 |---------|--------|
 | HTTP + HTTPS listen | ✅ |
 | Multi-backend routing | ✅ |
+| Default backend fallback | ✅ |
 | Path matching (glob + regex) | ✅ |
 | Method matching | ✅ |
 | HTTP webhooks (fire-and-forget) | ✅ |
@@ -208,6 +226,31 @@ HandOff/
 | Tracing / OpenTelemetry | 🚫 (future) |
 | Admin API / metrics endpoint | 🚫 (not planned) |
 | GUI | 🚫 (not planned) |
+
+---
+
+## v2 Ideas
+
+| Idea | Description | Impact |
+|------|-------------|--------|
+| **Conditional webhooks** | Fire only on status code match (e.g. `on: ["4xx", "5xx"]`) or response body pattern | High — common ops use case |
+| **Response body capture** | New `response_body` payload mode — webhook gets what the backend returned | High — unlocks full read/write audit |
+| **Webhook rate limiting / debounce** | Collapse duplicate webhooks within a configurable window | High — prevents flood on traffic spikes |
+| **Response header forwarding** | Add `X-Forwarded-*` and custom headers to backend requests | Medium — improves backend observability |
+| **gRPC proxy support** | Same pattern matching for gRPC method paths | Medium — expands to microservice stacks |
+| **WebSocket pass-through** | Handle `101 Switching Protocols` upgrades | Medium — needed for real-time apps |
+| **OpenTelemetry tracing** | Propagate trace IDs through proxy and into webhook requests | Medium — observability standard |
+| **Secrets hot reload** | Reload secrets on `SIGUSR1` alongside config | Low — small QoL improvement |
+| **Metrics endpoint** | `GET /metrics` with Prometheus format: request count, webhook success/fail rate, latency histograms | Low — ops visibility |
+| **Non-HTTP webhook types** | Exec commands, SQS, Kafka, SNS — pluggable via the `Action` interface | Low — niche, needs community interest |
+| **Header injection on backend requests** | Add/remove/rewrite headers before forwarding | Low — potentially dangerous |
+| **Webhook delivery dashboard** | Admin UI or JSON endpoint showing webhook success/failure stats | Not planned — out of scope for CLI proxy |
+
+### Top 3 Priorities
+
+1. **Conditional webhooks** — highest impact per line of code; nearly every ops use case needs "fire only on error"
+2. **Response body capture** — completes the audit story by giving webhooks access to what the backend returned
+3. **Webhook rate limiting** — critical for production deployments where a traffic spike shouldn't flood downstream webhook targets
 
 ---
 

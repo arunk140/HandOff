@@ -12,7 +12,7 @@ import (
 	"handoff/config"
 )
 
-func TestProxyHandlerNoRoute(t *testing.T) {
+func TestProxyHandlerNoRouteAndNoDefault(t *testing.T) {
 	cfg := &config.Config{
 		Listen: config.ListenConfig{Port: 8080},
 		Global: config.GlobalConfig{Timeout: config.Duration(30 * time.Second)},
@@ -126,5 +126,78 @@ func TestProxyHandlerWebhookFires(t *testing.T) {
 	}
 	if webhookCalled.Load() != 1 {
 		t.Errorf("expected 1 webhook call, got %d", webhookCalled.Load())
+	}
+}
+
+func TestProxyHandlerDefaultBackend(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("X-Default", "true")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("default: " + string(body)))
+	}))
+	defer backend.Close()
+
+	cfg := &config.Config{
+		Listen:         config.ListenConfig{Port: 8080},
+		Global:         config.GlobalConfig{Timeout: config.Duration(30 * time.Second)},
+		DefaultBackend: backend.URL,
+		Routes: []config.Route{
+			{Path: "/health", Methods: []string{"GET"}, Backend: backend.URL},
+		},
+	}
+	cfg.Validate()
+
+	cfgPtr := &atomic.Pointer[config.Config]{}
+	cfgPtr.Store(cfg)
+
+	handler := NewProxyHandler(cfgPtr, nil)
+
+	req := httptest.NewRequest("POST", "/anything", strings.NewReader("body"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 from default backend, got %d", rec.Code)
+	}
+	if rec.Header().Get("X-Default") != "true" {
+		t.Errorf("expected X-Default header from default backend")
+	}
+	if rec.Body.String() != "default: body" {
+		t.Errorf("expected 'default: body', got '%s'", rec.Body.String())
+	}
+}
+
+func TestProxyHandlerDefaultBackendNoBuffering(t *testing.T) {
+	// verify body is streamed (not buffered) when using default backend
+	var receivedBody string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		receivedBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	cfg := &config.Config{
+		Listen:         config.ListenConfig{Port: 8080},
+		Global:         config.GlobalConfig{Timeout: config.Duration(30 * time.Second)},
+		DefaultBackend: backend.URL,
+	}
+	cfg.Validate()
+
+	cfgPtr := &atomic.Pointer[config.Config]{}
+	cfgPtr.Store(cfg)
+
+	handler := NewProxyHandler(cfgPtr, nil)
+
+	req := httptest.NewRequest("POST", "/path", strings.NewReader("stream-body"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if receivedBody != "stream-body" {
+		t.Errorf("expected 'stream-body', got '%s'", receivedBody)
 	}
 }
