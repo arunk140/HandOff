@@ -24,8 +24,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f nightly
-          git push -f origin nightly
+          git tag -f v0.0.0-nightly
+          git push -f origin v0.0.0-nightly
 
       - uses: goreleaser/goreleaser-action@v5
         with:
